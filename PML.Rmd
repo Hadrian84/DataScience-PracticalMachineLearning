@@ -1,0 +1,108 @@
+---
+title: "Practical Machine Learning"
+author: "Hadrian84"
+date: "November 5, 2016"
+output: html_document
+---
+
+# Background
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self-movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much a particular activity they do, but they rarely quantify how well they do it. 
+
+In this project, the goal will be to use data from accelerometers on the belt, forearm, arm, and dumbbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. The goal of this project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. 
+
+This report describes how the model was build, how cross validation was used and what the out of sample error is. Finally, the prediction model is used to predict 20 different test cases.
+
+# Model
+### Libraries
+First, the required R packages are loaded, which we require for running the analyses.
+```{r}
+suppressWarnings(suppressMessages(library(caret)))
+suppressWarnings(suppressMessages(library(ggplot2)))
+suppressWarnings(suppressMessages(library(rattle)))
+suppressWarnings(suppressMessages(library(rpart)))
+suppressWarnings(suppressMessages(library(randomForest)))
+```
+
+### Data sets: importing and refining
+The data sets can be found online:
+```{r}
+# import training and testing data
+url_train = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+url_test  = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+  
+download.file(url = url_train, destfile = "training.csv")
+download.file(url = url_test,  destfile = "testing.csv")
+
+training = read.csv("training.csv", na.strings = c("NA", ''))
+testing  = read.csv("testing.csv", na.strings = c("NA", ''))
+```
+
+The data sets contain not useful columns. These are either:
+
+1. columns with many blank or NA values
+
+2. ID columns
+
+3. columns that do not contain significant variations
+
+```{r}
+# 1. remove columns with NA or blanks
+training = training[,colSums(is.na(training)) == 0]
+testing  = testing[,colSums(is.na(testing)) == 0]
+
+# 2. remove columns with non-predictive information
+training = training[,-c(1:7)]
+testing  = testing[,-c(1:7)]
+
+# 3. check for variables with near zero variance
+nearZeroVar(training)
+```
+
+The cleaned data sets now both have 53 columns. The first 52 columns are identical, and the last column is named "classe" and "problem_id" in the training and testing data set, respectively.
+
+### Data splitting
+To measure the out-of-sample errors, the initial training data set is split into a new training data set (70%) and a validation data set (30%). This validation data set will be used to check how well the model developed in the new training data set can predict the outcome "classe" in the validation data set.
+```{r}
+# to calculate out-of-sample errors: create training and validation set
+set.seed(12345)
+inTrain = createDataPartition(training$classe, p = .7, list = FALSE)
+training   = training[inTrain,]
+validation = training[-inTrain,]
+```
+
+## Prediction models
+In this project, we will use the classification tree and the random forest approach to predict the outcome.
+
+### Classification tree
+For the classification tree, we use the default 10-fold cross validation. We do not consider data transformations as these are less important in non-linear classification models.
+```{r}
+# perform classification tree
+control = trainControl(method = "cv")
+
+fit_rpart = train(classe ~ ., data = training, method = "rpart", trControl = control)
+print(fit_rpart)
+fancyRpartPlot(fit_rpart$finalModel)
+predict_rpart = predict(fit_rpart, validation)
+confusionMatrix(predict_rpart, validation$classe)
+```
+
+The fancy Rpart plot shows a prediction model that can be used to predict outcomes based on certain values for particular variables. However, when we look at the accuracy rate (i.e. how well does the prediction model predict the outcomes of the validation data set), this is around 0.5. This equals an out-of-sample error of 0.5 which means that the prediction model is not very good in predicting the outcome "classe".
+
+We therefore resort to a different prediction model: random forest
+
+### Random forest
+```{r}
+# perform random forest
+fit_rf = train(classe ~ ., data = training, method = "rf", prox = TRUE)
+predict_rf = predict(fit_rf, validation)
+confusionMatrix(predict_rf, validation$classe)
+```
+
+The random forest prediction model seems more suitable for this data set. The accuracy rate is > 0.999, which means that the out-of-sample error is < .001. This could potentially be because many variables are highly correlated with each other. Even though the random forest prediction model provides high accuracy, the offset is exceptionally increased computing time and difficult to interpretation.
+
+### Prediction
+We now use the random forest model to predict the outcome "classe" for each of the problem_ids included in the testing data set.
+
+```{r}
+predict(fit_rf, testing)
+```
